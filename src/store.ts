@@ -13,7 +13,7 @@ import type {
   MediaAsset,
   Project,
   ProjectDocument,
-  ProjectScopeLog,
+  ProjectWorkLog,
 } from "./types.js";
 
 const now = () => new Date().toISOString();
@@ -37,13 +37,13 @@ const document = (
   sourceReferences: [],
 });
 
-const scopeLog = (
-  type: ProjectScopeLog["type"],
+const workLog = (
+  type: ProjectWorkLog["type"],
   requestedBy: string,
   request: string,
   response: string,
   offsetDays: number,
-): ProjectScopeLog => ({
+): ProjectWorkLog => ({
   id: randomUUID(),
   type,
   requestedBy,
@@ -54,52 +54,52 @@ const scopeLog = (
 
 const projectOneDocuments = [
   document(
-    "overlay",
-    "Overlay.md",
+    "overview",
+    "Overview.md",
     "approved",
-    "# Spring Product Launch Overlay\n\nPosition the new analytics release around faster decisions, cleaner reporting, and confidence for revenue teams.\n\n## Primary audience\n\nRevenue operations leaders and marketing managers who need sharper account visibility.\n\n## Promise\n\nMoxio turns scattered campaign signals into clear next actions.",
+    "## Spring Product Launch Overview\n\nPosition the new analytics release around faster decisions, cleaner reporting, and confidence for revenue teams.\n\n## Primary audience\n\nRevenue operations leaders and marketing managers who need sharper account visibility.\n\n## Promise\n\nMoxio turns scattered campaign signals into clear next actions.",
   ),
   document(
     "voice",
     "Project-Voice.md",
     "awaiting_approval",
-    "# Project Voice\n\nCalm, precise, and useful. Avoid hype. Prefer practical proof and short explanations.\n\n## Copy posture\n\nLead with the operational problem, then show the measurable lift.",
+    "## Project Voice\n\nCalm, precise, and useful. Avoid hype. Prefer practical proof and short explanations.\n\n## Copy posture\n\nLead with the operational problem, then show the measurable lift.",
   ),
 ];
 
 const projectTwoDocuments = [
   document(
-    "overlay",
-    "Overlay.md",
+    "overview",
+    "Overview.md",
     "approved",
-    "# Renewal Nurture Overlay\n\nHelp existing customers discover underused automation features before renewal conversations.",
+    "## Renewal Nurture Overview\n\nHelp existing customers discover underused automation features before renewal conversations.",
   ),
-  document("voice", "Project-Voice.md", "approved", "# Project Voice\n\nHelpful, direct, and lightly consultative."),
+  document("voice", "Project-Voice.md", "approved", "## Project Voice\n\nHelpful, direct, and lightly consultative."),
 ];
 
-const projectOneScopeLogs = [
-  scopeLog(
+const projectOneWorkLogs = [
+  workLog(
     "sources",
     "Ava Morgan",
     "Find proof points for the analytics release that support faster triage and cleaner reporting.",
     "Loaded the launch brief, customer proof notes, competitive positioning memo, and analytics-release-brief.docx.",
     -6,
   ),
-  scopeLog(
+  workLog(
     "sources",
     "Ava Morgan",
     "What source material can support a revenue operations angle?",
     "Recommended revops-audience-notes.pdf and customer proof notes for the audience pain section.",
     -5,
   ),
-  scopeLog(
+  workLog(
     "deliverables",
     "Ava Morgan",
     "Plan the first campaign deliverables for launch week.",
     "Suggested 2 Facebook posts, 1 web article, and 3 emails across a two-week launch window.",
     -4,
   ),
-  scopeLog(
+  workLog(
     "deliverables",
     "Mika Chen",
     "Adjust deliverables so review has one web item before social variants.",
@@ -108,15 +108,15 @@ const projectOneScopeLogs = [
   ),
 ];
 
-const projectTwoScopeLogs = [
-  scopeLog(
+const projectTwoWorkLogs = [
+  workLog(
     "sources",
     "Rae Patel",
     "Collect renewal education references for customers approaching annual renewal.",
     "Loaded the renewal deck, feature usage export, and renewal-webinar-transcript.txt.",
     -9,
   ),
-  scopeLog(
+  workLog(
     "deliverables",
     "Rae Patel",
     "Create a lighter nurture plan from the renewal source set.",
@@ -152,6 +152,7 @@ const projectContextProfileIds: Record<"project-1" | "project-2", string[]> = {
     "ctx-product-8",
     "ctx-service-2",
     "ctx-service-5",
+    "ctx-research-1",
     "ctx-research-2",
     "ctx-research-5",
     "ctx-research-9",
@@ -627,7 +628,7 @@ const contextSeeds: Record<ContextProfileType, ContextProfileSeed[]> = {
 const knowledgeFileIdsByContextProfileId: Record<string, string[]> = {
   "ctx-1": ["kb-1"],
   "ctx-2": ["kb-2"],
-  "ctx-4": ["kb-3"],
+  "ctx-research-6": ["kb-3"],
 };
 
 const mediaIdsByContextProfileId: Record<string, string[]> = {
@@ -810,19 +811,6 @@ const generatedMediaAssetSeeds: Array<{
     aiGenerated: false,
   },
   {
-    title: "Site context field map",
-    fileType: "pdf",
-    mediaType: "document",
-    thumbnail: "linear-gradient(135deg, #d9ed92, #52b69a)",
-    tags: ["context", "document", "map"],
-    folder: "Source Files",
-    projectIds: ["project-1", "project-2"],
-    contentItemIds: [],
-    altText: "Document mapping site context fields.",
-    notes: "Reference for Context Hub examples.",
-    aiGenerated: false,
-  },
-  {
     title: "Social proof tile set",
     fileType: "png",
     mediaType: "image",
@@ -885,19 +873,6 @@ const generatedMediaAssetSeeds: Array<{
     aiGenerated: false,
   },
   {
-    title: "Campaign source bundle",
-    fileType: "zip",
-    mediaType: "document",
-    thumbnail: "linear-gradient(135deg, #e9c46a, #e76f51)",
-    tags: ["source", "campaign", "bundle"],
-    folder: "Source Files",
-    projectIds: ["project-1"],
-    contentItemIds: [],
-    altText: "Archive of source materials for campaign planning.",
-    notes: "Mock bundle for source attachment flows.",
-    aiGenerated: false,
-  },
-  {
     title: "Review queue empty state",
     fileType: "png",
     mediaType: "image",
@@ -945,19 +920,6 @@ const generatedMediaAssetSeeds: Array<{
     contentItemIds: [],
     altText: "Grid of case study proof points.",
     notes: "Use for proof-backed campaign sections.",
-  },
-  {
-    title: "Operational handoff map",
-    fileType: "pdf",
-    mediaType: "document",
-    thumbnail: "linear-gradient(135deg, #bde0fe, #caffbf)",
-    tags: ["handoff", "operations", "map"],
-    folder: "Source Files",
-    projectIds: ["project-1"],
-    contentItemIds: [],
-    altText: "Operational handoff map document.",
-    notes: "Mock document for Project source material.",
-    aiGenerated: false,
   },
   {
     title: "Web hero product crop",
@@ -1034,7 +996,7 @@ const designFiles: DesignFile[] = [
     siteId: "site-1",
     title: "Default Email Template",
     fileName: "default-email-template.md",
-    body: "# Default Email Template\n\nUse a sharp subject, short preheader, clear opening argument, proof-led body sections, and one direct next step.",
+    body: "## Default Email Template\n\nUse a sharp subject, short preheader, clear opening argument, proof-led body sections, and one direct next step.",
     tags: ["email", "newsletter", "default"],
     createdAt: daysFromNow(-12),
     updatedAt: daysFromNow(-2),
@@ -1044,7 +1006,7 @@ const designFiles: DesignFile[] = [
     siteId: "site-1",
     title: "Product Launch Article",
     fileName: "product-launch-article.md",
-    body: "# Product Launch Article\n\nOpen with the operational pain, introduce the release, show the workflow impact, and close with what teams can do next.",
+    body: "## Product Launch Article\n\nOpen with the operational pain, introduce the release, show the workflow impact, and close with what teams can do next.",
     tags: ["web", "launch", "article"],
     createdAt: daysFromNow(-10),
     updatedAt: daysFromNow(-4),
@@ -1054,7 +1016,7 @@ const designFiles: DesignFile[] = [
     siteId: "site-1",
     title: "Proof Sequence",
     fileName: "proof-sequence.md",
-    body: "# Proof Sequence\n\nLead with customer evidence, connect the proof to a repeatable workflow, then turn it into short follow-up content.",
+    body: "## Proof Sequence\n\nLead with customer evidence, connect the proof to a repeatable workflow, then turn it into short follow-up content.",
     tags: ["email", "web", "proof"],
     createdAt: daysFromNow(-9),
     updatedAt: daysFromNow(-1),
@@ -1064,7 +1026,7 @@ const designFiles: DesignFile[] = [
     siteId: "site-1",
     title: "Newsletter Education",
     fileName: "newsletter-education.md",
-    body: "# Newsletter Education\n\nTeach one idea, explain why it matters now, give one practical example, and invite a low-friction next action.",
+    body: "## Newsletter Education\n\nTeach one idea, explain why it matters now, give one practical example, and invite a low-friction next action.",
     tags: ["email", "education"],
     createdAt: daysFromNow(-7),
     updatedAt: daysFromNow(-3),
@@ -1124,7 +1086,7 @@ export const store: AppStore = {
       modifiedAt: now(),
       summary: "Launch campaign for the analytics command center release.",
       documents: projectOneDocuments,
-      scopeLogs: projectOneScopeLogs,
+      workLogs: projectOneWorkLogs,
       deliverables: {
         facebookCount: 2,
         webCount: 1,
@@ -1150,7 +1112,7 @@ export const store: AppStore = {
       modifiedAt: daysFromNow(-3),
       summary: "Retention campaign for customers approaching annual renewal.",
       documents: projectTwoDocuments,
-      scopeLogs: projectTwoScopeLogs,
+      workLogs: projectTwoWorkLogs,
       deliverables: {
         facebookCount: 2,
         webCount: 1,
@@ -1220,6 +1182,7 @@ export const store: AppStore = {
       siteId: "site-1",
       fileName: "revops-audience-notes.pdf",
       fileType: "pdf",
+      description: "Audience research source for revenue operations positioning.",
       indexingStatus: "indexed",
       associatedContextProfileId: "ctx-1",
       associatedProjectId: "project-1",
@@ -1233,6 +1196,7 @@ export const store: AppStore = {
       siteId: "site-1",
       fileName: "analytics-release-brief.docx",
       fileType: "docx",
+      description: "Product launch brief used by the analytics command center profile.",
       indexingStatus: "indexed",
       associatedContextProfileId: "ctx-2",
       associatedProjectId: "project-1",
@@ -1246,13 +1210,40 @@ export const store: AppStore = {
       siteId: "site-1",
       fileName: "renewal-webinar-transcript.txt",
       fileType: "txt",
+      description: "Transcript source for renewal education and lifecycle messaging.",
       indexingStatus: "indexed",
-      associatedContextProfileId: "ctx-4",
+      associatedContextProfileId: "ctx-research-6",
       associatedProjectId: "project-2",
       content:
         "Renewal webinar transcript with customer language about onboarding gaps, executive reporting needs, and objections that should inform lifecycle messaging.",
       uploadedBy: "user-2",
       createdAt: daysFromNow(-28),
+    },
+    {
+      id: "kb-4",
+      siteId: "site-1",
+      fileName: "site-context-field-map.pdf",
+      fileType: "pdf",
+      description: "Reference map for Site Context fields and Context Hub examples.",
+      indexingStatus: "indexed",
+      associatedProjectId: "project-1",
+      content:
+        "Site context field map describing the core profile, voice, SEO, brand, and knowledge fields that should remain reusable across Projects.",
+      uploadedBy: "user-1",
+      createdAt: daysFromNow(-22),
+    },
+    {
+      id: "kb-5",
+      siteId: "site-1",
+      fileName: "operational-handoff-map.pdf",
+      fileType: "pdf",
+      description: "Project source reference for operational handoff planning.",
+      indexingStatus: "indexed",
+      associatedProjectId: "project-1",
+      content:
+        "Operational handoff map covering owner transitions, approval checkpoints, source evidence, and review readiness for campaign work.",
+      uploadedBy: "user-3",
+      createdAt: daysFromNow(-18),
     },
   ],
   mediaAssets: [
@@ -1404,7 +1395,7 @@ export const store: AppStore = {
       mediaIds: [],
       tags: ["email", "launch"],
       comments: [],
-      history: ["Draft generated from approved overlay."],
+      history: ["Draft generated from approved overview."],
       shareState: "private",
       subject: "A cleaner way to read launch performance",
       preheader: "See the signals that help revenue teams move faster.",

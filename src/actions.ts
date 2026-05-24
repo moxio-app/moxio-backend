@@ -134,30 +134,30 @@ const findMediaAsset = (assetId: string) => {
 };
 
 const documentBodyForType = (type: ProjectDocument["type"]) => {
-  if (type === "overlay") return "# Overlay.md\n\nEmpty project overlay. The Account Manager will draft this from the project brief.";
-  if (type === "voice") return "# Project-Voice.md\n\nEmpty project voice. The Voice Agent will draft this from Site Context Hub and project instructions.";
-  if (type === "context") return "# Context\n\nNo context profiles selected yet.";
-  if (type === "designs") return "# Designs.md\n\nNo design references selected yet.";
-  if (type === "sources") return "# Sources\n\nNo sources attached yet.";
-  return "# Deliverables\n\nNo deliverable counts planned yet.";
+  if (type === "overview") return "## Overview.md\n\nEmpty project overview. The Account Manager will draft this from the project brief.";
+  if (type === "voice") return "## Project-Voice.md\n\nEmpty project voice. The Voice Agent will draft this from Site Context Hub and project instructions.";
+  if (type === "context") return "## Context\n\nNo context profiles selected yet.";
+  if (type === "designs") return "## Designs.md\n\nNo design references selected yet.";
+  if (type === "sources") return "## Sources\n\nNo sources attached yet.";
+  return "## Deliverables\n\nNo deliverable counts planned yet.";
 };
 
 const createProjectDocuments = (): ProjectDocument[] =>
-  (["overlay", "voice"] as ProjectDocument["type"][]).map(
+  (["overview", "voice"] as ProjectDocument["type"][]).map(
     (type) => ({
       id: createId("doc"),
       type,
       title:
-        type === "overlay"
-          ? "Overlay.md"
+        type === "overview"
+          ? "Overview.md"
           : type === "voice"
             ? "Project-Voice.md"
             : type === "designs"
               ? "Designs.md"
               : type[0]!.toUpperCase() + type.slice(1),
       body: documentBodyForType(type),
-      state: type === "overlay" ? "in_progress" : "empty",
-      version: type === "overlay" ? 1 : 0,
+      state: type === "overview" ? "in_progress" : "empty",
+      version: type === "overview" ? 1 : 0,
       lastEditedBy: store.currentUser.id,
       updatedAt: now(),
       sourceReferences: [],
@@ -225,7 +225,7 @@ const contextEntrySchema = z.object({
 
 const mediaUploadSchema = z.object({
   title: z.string().trim().min(1),
-  mediaType: z.enum(["image", "video", "document"]).default("image"),
+  mediaType: z.enum(["image", "video"]).default("image"),
   tags: z.array(z.string()).default([]),
   folder: z.string().default("AI Generations"),
   altText: z.string().default(""),
@@ -254,7 +254,9 @@ const contentItemSchema = z.object({
 const duplicateContentSchema = contentItemSchema.extend({
   platforms: z.array(z.string().trim().min(1)).optional(),
   scheduledFor: z.string().trim().min(1).optional(),
-  status: z.enum(["draft", "pending", "scheduled", "rejected", "live"]).optional(),
+  status: z
+    .enum(["draft", "need_revision", "pending", "scheduled", "approved", "rejected", "live", "published", "failed"])
+    .optional(),
 });
 
 const rejectContentSchema = contentItemSchema.extend({
@@ -263,7 +265,9 @@ const rejectContentSchema = contentItemSchema.extend({
 
 const rescheduleContentSchema = contentItemSchema.extend({
   scheduledFor: z.string().trim().min(1),
-  status: z.enum(["draft", "pending", "scheduled", "approved", "rejected", "live"]).optional(),
+  status: z
+    .enum(["draft", "need_revision", "pending", "scheduled", "approved", "rejected", "live", "published", "failed"])
+    .optional(),
 });
 
 const bulkReviewSchema = z.object({
@@ -317,7 +321,7 @@ const actionRegistry: Record<string, RegisteredAction> = {
           parsed.summary ??
           "New Project scope started by the Account Manager. Required context and deliverables are still being gathered.",
         documents: createProjectDocuments(),
-        scopeLogs: [],
+        workLogs: [],
         deliverables: {
           facebookCount: 0,
           webCount: 0,
@@ -519,7 +523,7 @@ const actionRegistry: Record<string, RegisteredAction> = {
       touchProject(project);
 
       const allCoreApproved = project.documents
-        .filter((doc) => ["overlay", "voice", "deliverables"].includes(doc.type))
+        .filter((doc) => ["overview", "voice", "deliverables"].includes(doc.type))
         .every((doc) => doc.state === "approved");
       if (allCoreApproved && project.state !== "completed") {
         project.state = "approved";
@@ -587,7 +591,7 @@ const actionRegistry: Record<string, RegisteredAction> = {
 
       project.deliverables = deliverables;
       const doc = findDocument(project, "deliverables");
-      doc.body = `# Deliverables\n\n- Facebook count: ${deliverables.facebookCount}\n- Web count: ${deliverables.webCount}\n- Email count: ${deliverables.emailCount}\n- Schedule range: ${deliverables.scheduleRange}\n- Cadence: ${deliverables.cadence}\n- Destinations: ${deliverables.destinationAccounts.join(", ") || "Not selected"}\n\n${deliverables.notes}`;
+      doc.body = `## Deliverables\n\n- Facebook count: ${deliverables.facebookCount}\n- Web count: ${deliverables.webCount}\n- Email count: ${deliverables.emailCount}\n- Schedule range: ${deliverables.scheduleRange}\n- Cadence: ${deliverables.cadence}\n- Destinations: ${deliverables.destinationAccounts.join(", ") || "Not selected"}\n\n${deliverables.notes}`;
       doc.state = "awaiting_approval";
       doc.version += 1;
       doc.updatedAt = now();
@@ -810,14 +814,12 @@ const actionRegistry: Record<string, RegisteredAction> = {
         id: createId("media"),
         siteId: store.site.id,
         title: parsed.title,
-        fileType: parsed.mediaType === "document" ? "pdf" : parsed.mediaType === "video" ? "mp4" : "png",
+        fileType: parsed.mediaType === "video" ? "mp4" : "png",
         mediaType: parsed.mediaType,
         thumbnail:
           parsed.mediaType === "video"
             ? "linear-gradient(135deg, #ff9f7a, #8067ff)"
-            : parsed.mediaType === "document"
-              ? "linear-gradient(135deg, #ffffff, #85e8ff)"
-              : "linear-gradient(135deg, #85f7ff, #9b8cff)",
+            : "linear-gradient(135deg, #85f7ff, #9b8cff)",
         tags: parsed.tags,
         folder: parsed.folder,
         projectIds: [],

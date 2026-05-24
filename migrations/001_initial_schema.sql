@@ -40,13 +40,44 @@ CREATE TYPE project_state AS ENUM (
   'rejected',
   'archived'
 );
+CREATE TYPE project_doc_type AS ENUM (
+  'overview',
+  'voice',
+  'designs',
+  'context',
+  'sources',
+  'deliverables'
+);
+CREATE TYPE project_doc_state AS ENUM (
+  'empty',
+  'in_progress',
+  'awaiting_approval',
+  'approved',
+  'rejected'
+);
 CREATE TYPE sites_doc_type AS ENUM (
   'global_profile',
   'global_voice',
   'global_seo'
 );
-CREATE TYPE project_scope_log_type AS ENUM ('sources', 'deliverables');
+CREATE TYPE project_work_log_type AS ENUM ('sources', 'deliverables', 'context');
+CREATE TYPE project_work_log_state AS ENUM (
+  'logged',
+  'pending_user_input',
+  'agent_working',
+  'overview_updated',
+  'cancelled',
+  'failed'
+);
 CREATE TYPE share_state AS ENUM ('private', 'site', 'public');
+CREATE TYPE context_profile_type AS ENUM (
+  'audience',
+  'product_service',
+  'service',
+  'deep_research',
+  'industry',
+  'case_study'
+);
 CREATE TYPE asset_status AS ENUM ('pending_approval', 'approved', 'rejected', 'archived');
 CREATE TYPE indexing_status AS ENUM ('queued', 'indexed', 'failed');
 CREATE TYPE media_type AS ENUM ('image', 'video');
@@ -70,7 +101,7 @@ CREATE TYPE confirmation_state AS ENUM ('not_required', 'confirmed');
 CREATE TYPE action_result AS ENUM ('success', 'failure');
 CREATE TYPE chat_role AS ENUM ('system', 'user', 'assistant', 'tool');
 CREATE TYPE ai_job_status AS ENUM ('queued', 'running', 'completed', 'failed');
-CREATE TYPE generation_kind AS ENUM ('social_media_asset', 'infographic', 'image_edit');
+CREATE TYPE generation_kind AS ENUM ('generate_image', 'frame_image');
 CREATE TYPE billing_interval AS ENUM ('monthly', 'annual');
 CREATE TYPE permission_scope AS ENUM ('team', 'site', 'project');
 CREATE TYPE permission_role AS ENUM (
@@ -82,13 +113,6 @@ CREATE TYPE permission_role AS ENUM (
 );
 CREATE TYPE reviewer_state AS ENUM ('invited', 'active', 'revoked', 'expired');
 CREATE TYPE reviewer_token_state AS ENUM ('active', 'used', 'expired', 'revoked');
-CREATE TYPE project_context_selection_state AS ENUM (
-  'pending_user_input',
-  'agent_working',
-  'overlay_updated',
-  'cancelled',
-  'failed'
-);
 
 CREATE TABLE plans (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -112,7 +136,7 @@ CREATE INDEX plans_included_platforms_idx ON plans USING gin(included_platforms)
 CREATE TABLE plans_prices (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   plans_price_id varchar(12) NOT NULL UNIQUE CHECK (plans_price_id ~ '^[0-9A-Za-z]{12}$'),
-  plan_id varchar(12) NOT NULL REFERENCES plans(plan_id) ON DELETE CASCADE,
+  plan_id varchar(12) NOT NULL REFERENCES plans(plan_id),
   interval billing_interval NOT NULL,
   currency char(3) NOT NULL CHECK (currency = upper(currency)),
   amount_cents integer NOT NULL CHECK (amount_cents >= 0),
@@ -159,8 +183,8 @@ CREATE UNIQUE INDEX users_email_lower_idx ON users (lower(email));
 CREATE TABLE users_team (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   users_team_id varchar(12) NOT NULL UNIQUE CHECK (users_team_id ~ '^[0-9A-Za-z]{12}$'),
-  team_id varchar(12) NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
-  user_id varchar(12) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  team_id varchar(12) NOT NULL REFERENCES teams(team_id),
+  user_id varchar(12) NOT NULL REFERENCES users(user_id),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (team_id, user_id)
 );
@@ -168,7 +192,7 @@ CREATE TABLE users_team (
 CREATE TABLE sites (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   site_id varchar(12) NOT NULL UNIQUE CHECK (site_id ~ '^[0-9A-Za-z]{12}$'),
-  team_id varchar(12) NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+  team_id varchar(12) NOT NULL REFERENCES teams(team_id),
   name text NOT NULL CHECK (name <> ''),
   domain text NOT NULL CHECK (domain <> ''),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -179,8 +203,8 @@ CREATE TABLE sites (
 CREATE TABLE users_site (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   users_site_id varchar(12) NOT NULL UNIQUE CHECK (users_site_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  user_id varchar(12) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  user_id varchar(12) NOT NULL REFERENCES users(user_id),
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (site_id, user_id)
 );
@@ -237,7 +261,7 @@ CREATE TABLE permissions_grants (
   permissions_grant_id varchar(12) NOT NULL UNIQUE CHECK (permissions_grant_id ~ '^[0-9A-Za-z]{12}$'),
   scope permission_scope NOT NULL,
   scope_id varchar(12) NOT NULL CHECK (scope_id ~ '^[0-9A-Za-z]{12}$'),
-  user_id varchar(12) NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  user_id varchar(12) NOT NULL REFERENCES users(user_id),
   role permission_role NOT NULL,
   granted_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -256,7 +280,7 @@ CREATE INDEX permissions_grants_scope_role_idx ON permissions_grants(scope, scop
 CREATE TABLE projects (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   project_id varchar(12) NOT NULL UNIQUE CHECK (project_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   owner_user_id varchar(12) NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
   project_admin_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   reviewer_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
@@ -271,18 +295,16 @@ CREATE TABLE projects (
   cadence text NOT NULL DEFAULT '',
   destination_accounts text[] NOT NULL DEFAULT '{}'::text[],
   deliverable_notes text NOT NULL DEFAULT '',
-  docs jsonb NOT NULL DEFAULT '{}'::jsonb,
-  audience_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  product_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  service_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  study_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  research_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  industry_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
+  context_profile_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
+  approved_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  approved_at timestamptz,
+  rejected_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  rejected_at timestamptz,
+  rejection_reason text NOT NULL DEFAULT '',
+  archived_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz,
-  CHECK (jsonb_typeof(docs) = 'object')
+  archived_at timestamptz
 );
 
 CREATE INDEX projects_owner_user_id_idx ON projects(owner_user_id);
@@ -291,20 +313,47 @@ CREATE INDEX projects_project_admin_user_id_idx ON projects(project_admin_user_i
 CREATE INDEX projects_site_state_idx ON projects(site_id, state);
 CREATE INDEX projects_site_share_state_idx ON projects(site_id, share_state);
 CREATE INDEX projects_site_updated_at_idx ON projects(site_id, updated_at DESC);
+CREATE INDEX projects_site_active_updated_at_idx ON projects(site_id, updated_at DESC)
+  WHERE archived_at IS NULL;
 CREATE INDEX projects_site_name_idx ON projects(site_id, lower(name));
-CREATE INDEX projects_audience_ids_idx ON projects USING gin(audience_ids);
-CREATE INDEX projects_product_ids_idx ON projects USING gin(product_ids);
-CREATE INDEX projects_service_ids_idx ON projects USING gin(service_ids);
-CREATE INDEX projects_study_ids_idx ON projects USING gin(study_ids);
-CREATE INDEX projects_research_ids_idx ON projects USING gin(research_ids);
-CREATE INDEX projects_industry_ids_idx ON projects USING gin(industry_ids);
-CREATE INDEX projects_asset_ids_idx ON projects USING gin(asset_ids);
+CREATE INDEX projects_context_profile_ids_idx ON projects USING gin(context_profile_ids);
+CREATE INDEX projects_approved_by_user_id_idx ON projects(approved_by_user_id)
+  WHERE approved_by_user_id IS NOT NULL;
+CREATE INDEX projects_rejected_by_user_id_idx ON projects(rejected_by_user_id)
+  WHERE rejected_by_user_id IS NOT NULL;
+CREATE INDEX projects_archived_by_user_id_idx ON projects(archived_by_user_id)
+  WHERE archived_by_user_id IS NOT NULL;
+
+CREATE TABLE projects_docs (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  projects_doc_id varchar(12) NOT NULL UNIQUE CHECK (projects_doc_id ~ '^[0-9A-Za-z]{12}$'),
+  project_id varchar(12) NOT NULL REFERENCES projects(project_id),
+  type project_doc_type NOT NULL,
+  title text NOT NULL CHECK (title <> ''),
+  body text NOT NULL DEFAULT '',
+  state project_doc_state NOT NULL DEFAULT 'empty',
+  version integer NOT NULL DEFAULT 0 CHECK (version >= 0),
+  last_edited_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  approved_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  approved_at timestamptz,
+  rejection_reason text NOT NULL DEFAULT '',
+  source_references text[] NOT NULL DEFAULT '{}'::text[],
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (jsonb_typeof(metadata) = 'object')
+);
+
+CREATE UNIQUE INDEX projects_docs_project_type_idx ON projects_docs(project_id, type);
+CREATE INDEX projects_docs_project_state_idx ON projects_docs(project_id, state);
+CREATE INDEX projects_docs_project_updated_at_idx ON projects_docs(project_id, updated_at DESC);
+CREATE INDEX projects_docs_source_references_idx ON projects_docs USING gin(source_references);
 
 CREATE TABLE reviewers (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   reviewer_id varchar(12) NOT NULL UNIQUE CHECK (reviewer_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  project_id varchar(12) NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  project_id varchar(12) NOT NULL REFERENCES projects(project_id),
   email text NOT NULL CHECK (email <> ''),
   name text NOT NULL DEFAULT '',
   status reviewer_state NOT NULL DEFAULT 'invited',
@@ -325,7 +374,7 @@ CREATE INDEX reviewers_project_status_idx ON reviewers(project_id, status);
 CREATE TABLE reviewers_tokens (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   reviewers_token_id varchar(12) NOT NULL UNIQUE CHECK (reviewers_token_id ~ '^[0-9A-Za-z]{12}$'),
-  reviewer_id varchar(12) NOT NULL REFERENCES reviewers(reviewer_id) ON DELETE CASCADE,
+  reviewer_id varchar(12) NOT NULL REFERENCES reviewers(reviewer_id),
   token_hash text NOT NULL CHECK (token_hash <> ''),
   otp_hash text NOT NULL CHECK (otp_hash <> ''),
   status reviewer_token_state NOT NULL DEFAULT 'active',
@@ -343,29 +392,10 @@ CREATE INDEX reviewers_tokens_token_hash_idx ON reviewers_tokens(token_hash)
 CREATE INDEX reviewers_tokens_otp_hash_idx ON reviewers_tokens(otp_hash)
   WHERE status = 'active';
 
-CREATE TABLE projects_scope_logs (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  projects_scope_log_id varchar(12) NOT NULL UNIQUE CHECK (projects_scope_log_id ~ '^[0-9A-Za-z]{12}$'),
-  project_id varchar(12) NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  actor_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  type project_scope_log_type NOT NULL,
-  request text NOT NULL DEFAULT '',
-  response text NOT NULL DEFAULT '',
-  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (jsonb_typeof(metadata) = 'object')
-);
-
-CREATE INDEX projects_scope_logs_project_type_created_at_idx
-  ON projects_scope_logs(project_id, type, created_at DESC);
-CREATE INDEX projects_scope_logs_actor_created_at_idx
-  ON projects_scope_logs(actor_user_id, created_at DESC)
-  WHERE actor_user_id IS NOT NULL;
-
 CREATE TABLE sites_docs (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   sites_doc_id varchar(12) NOT NULL UNIQUE CHECK (sites_doc_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   type sites_doc_type NOT NULL,
   file_name text NOT NULL CHECK (file_name <> ''),
   body text NOT NULL DEFAULT '',
@@ -375,161 +405,51 @@ CREATE TABLE sites_docs (
   UNIQUE (site_id, type)
 );
 
-CREATE TABLE profiles_audiences (
+CREATE TABLE context_profiles (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  audience_id varchar(12) NOT NULL UNIQUE CHECK (audience_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
-  summary text NOT NULL DEFAULT '',
-  pain text NOT NULL DEFAULT '',
-  solutions text NOT NULL DEFAULT '',
-  instructions text NOT NULL DEFAULT '',
-  industry_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  share_state share_state NOT NULL DEFAULT 'private',
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
-);
-
-CREATE INDEX profiles_audiences_site_name_idx ON profiles_audiences(site_id, name);
-CREATE INDEX profiles_audiences_site_share_state_idx ON profiles_audiences(site_id, share_state);
-CREATE INDEX profiles_audiences_site_created_at_idx ON profiles_audiences(site_id, created_at DESC);
-CREATE INDEX profiles_audiences_site_sort_idx ON profiles_audiences(site_id, sort_order, name);
-CREATE INDEX profiles_audiences_site_archived_at_idx ON profiles_audiences(site_id, archived_at);
-
-CREATE TABLE profiles_products (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  product_id varchar(12) NOT NULL UNIQUE CHECK (product_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
-  summary text NOT NULL DEFAULT '',
-  url text,
-  instructions text NOT NULL DEFAULT '',
-  audience_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  industry_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  share_state share_state NOT NULL DEFAULT 'private',
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
-);
-
-CREATE INDEX profiles_products_site_name_idx ON profiles_products(site_id, name);
-CREATE INDEX profiles_products_site_share_state_idx ON profiles_products(site_id, share_state);
-CREATE INDEX profiles_products_site_created_at_idx ON profiles_products(site_id, created_at DESC);
-CREATE INDEX profiles_products_site_sort_idx ON profiles_products(site_id, sort_order, name);
-CREATE INDEX profiles_products_site_archived_at_idx ON profiles_products(site_id, archived_at);
-
-CREATE TABLE profiles_services (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  service_id varchar(12) NOT NULL UNIQUE CHECK (service_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
-  summary text NOT NULL DEFAULT '',
-  url text,
-  instructions text NOT NULL DEFAULT '',
-  audience_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  industry_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  share_state share_state NOT NULL DEFAULT 'private',
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
-);
-
-CREATE INDEX profiles_services_site_name_idx ON profiles_services(site_id, name);
-CREATE INDEX profiles_services_site_share_state_idx ON profiles_services(site_id, share_state);
-CREATE INDEX profiles_services_site_created_at_idx ON profiles_services(site_id, created_at DESC);
-CREATE INDEX profiles_services_site_sort_idx ON profiles_services(site_id, sort_order, name);
-CREATE INDEX profiles_services_site_archived_at_idx ON profiles_services(site_id, archived_at);
-
-CREATE TABLE profiles_studies (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  study_id varchar(12) NOT NULL UNIQUE CHECK (study_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
-  summary text NOT NULL DEFAULT '',
-  pain text NOT NULL DEFAULT '',
-  solutions text NOT NULL DEFAULT '',
-  service text NOT NULL DEFAULT '',
-  url text,
-  industry_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  share_state share_state NOT NULL DEFAULT 'private',
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
-);
-
-CREATE INDEX profiles_studies_site_name_idx ON profiles_studies(site_id, name);
-CREATE INDEX profiles_studies_site_share_state_idx ON profiles_studies(site_id, share_state);
-CREATE INDEX profiles_studies_site_created_at_idx ON profiles_studies(site_id, created_at DESC);
-CREATE INDEX profiles_studies_site_sort_idx ON profiles_studies(site_id, sort_order, name);
-CREATE INDEX profiles_studies_site_archived_at_idx ON profiles_studies(site_id, archived_at);
-
-CREATE TABLE profiles_research (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  research_id varchar(12) NOT NULL UNIQUE CHECK (research_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
+  context_profile_id varchar(12) NOT NULL UNIQUE CHECK (context_profile_id ~ '^[0-9A-Za-z]{12}$'),
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  type context_profile_type NOT NULL,
+  title text NOT NULL CHECK (title <> ''),
   summary text NOT NULL DEFAULT '',
   body text NOT NULL DEFAULT '',
   url text,
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
+  related_profile_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
+  type_data jsonb NOT NULL DEFAULT '{}'::jsonb,
   owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   share_state share_state NOT NULL DEFAULT 'private',
   sort_order integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
+  archived_at timestamptz,
+  CHECK (jsonb_typeof(type_data) = 'object')
 );
 
-CREATE INDEX profiles_research_site_name_idx ON profiles_research(site_id, name);
-CREATE INDEX profiles_research_site_share_state_idx ON profiles_research(site_id, share_state);
-CREATE INDEX profiles_research_site_created_at_idx ON profiles_research(site_id, created_at DESC);
-CREATE INDEX profiles_research_site_sort_idx ON profiles_research(site_id, sort_order, name);
-CREATE INDEX profiles_research_site_archived_at_idx ON profiles_research(site_id, archived_at);
-
-CREATE TABLE profiles_industries (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  industry_id varchar(12) NOT NULL UNIQUE CHECK (industry_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  name text NOT NULL CHECK (name <> ''),
-  summary text NOT NULL DEFAULT '',
-  trends text NOT NULL DEFAULT '',
-  language text NOT NULL DEFAULT '',
-  publications text NOT NULL DEFAULT '',
-  experts text NOT NULL DEFAULT '',
-  product_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  study_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  owner_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  share_state share_state NOT NULL DEFAULT 'private',
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  archived_at timestamptz
+CREATE INDEX context_profiles_site_type_sort_idx
+  ON context_profiles(site_id, type, sort_order, title)
+  WHERE archived_at IS NULL;
+CREATE INDEX context_profiles_site_type_created_at_idx
+  ON context_profiles(site_id, type, created_at DESC)
+  WHERE archived_at IS NULL;
+CREATE INDEX context_profiles_site_type_title_idx
+  ON context_profiles(site_id, type, lower(title))
+  WHERE archived_at IS NULL;
+CREATE INDEX context_profiles_site_share_state_idx ON context_profiles(site_id, share_state);
+CREATE INDEX context_profiles_archived_at_idx ON context_profiles(site_id, archived_at);
+CREATE INDEX context_profiles_related_profile_ids_idx ON context_profiles USING gin(related_profile_ids);
+CREATE INDEX context_profiles_type_data_idx ON context_profiles USING gin(type_data);
+CREATE INDEX context_profiles_search_idx ON context_profiles USING gin (
+  to_tsvector(
+    'english',
+    title || ' ' || summary || ' ' || body || ' ' || coalesce(url, '') || ' ' ||
+    type::text || ' ' || type_data::text
+  )
 );
-
-CREATE INDEX profiles_industries_site_name_idx ON profiles_industries(site_id, name);
-CREATE INDEX profiles_industries_site_share_state_idx ON profiles_industries(site_id, share_state);
-CREATE INDEX profiles_industries_site_created_at_idx ON profiles_industries(site_id, created_at DESC);
-CREATE INDEX profiles_industries_site_sort_idx ON profiles_industries(site_id, sort_order, name);
-CREATE INDEX profiles_industries_site_archived_at_idx ON profiles_industries(site_id, archived_at);
 
 CREATE TABLE assets (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   asset_id varchar(12) NOT NULL UNIQUE CHECK (asset_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   title text NOT NULL CHECK (title <> ''),
   media_type media_type NOT NULL,
   status asset_status NOT NULL DEFAULT 'pending_approval',
@@ -571,8 +491,9 @@ CREATE INDEX assets_search_idx ON assets USING gin (
 CREATE TABLE knowledge (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   knowledge_id varchar(12) NOT NULL UNIQUE CHECK (knowledge_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   title text NOT NULL CHECK (title <> ''),
+  description text NOT NULL DEFAULT '',
   file_ext text NOT NULL CHECK (file_ext <> ''),
   mime_type text NOT NULL CHECK (mime_type <> ''),
   original_file_name text NOT NULL DEFAULT '',
@@ -602,7 +523,7 @@ CREATE INDEX knowledge_tags_idx ON knowledge USING gin(tags);
 CREATE INDEX knowledge_search_idx ON knowledge USING gin (
   to_tsvector(
     'english',
-    title || ' ' || original_file_name || ' ' || folder || ' ' ||
+    title || ' ' || description || ' ' || original_file_name || ' ' || folder || ' ' ||
     content || ' ' || array_to_string(tags, ' ')
   )
 );
@@ -610,7 +531,7 @@ CREATE INDEX knowledge_search_idx ON knowledge USING gin (
 CREATE TABLE designs (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   design_id varchar(12) NOT NULL UNIQUE CHECK (design_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   title text NOT NULL CHECK (title <> ''),
   file_name text NOT NULL CHECK (file_name <> ''),
   description text NOT NULL DEFAULT '',
@@ -642,8 +563,8 @@ CREATE INDEX designs_search_idx ON designs USING gin (
 CREATE TABLE contents_groups (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   contents_group_id varchar(12) NOT NULL UNIQUE CHECK (contents_group_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  project_id varchar(12) NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  project_id varchar(12) NOT NULL REFERENCES projects(project_id),
   name text NOT NULL CHECK (name <> ''),
   status contents_group_status NOT NULL DEFAULT 'draft',
   schedule_range text NOT NULL DEFAULT '',
@@ -661,7 +582,7 @@ CREATE INDEX contents_groups_site_share_state_idx ON contents_groups(site_id, sh
 CREATE TABLE contents (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   content_id varchar(12) NOT NULL UNIQUE CHECK (content_id ~ '^[0-9A-Za-z]{12}$'),
-  contents_group_id varchar(12) NOT NULL REFERENCES contents_groups(contents_group_id) ON DELETE CASCADE,
+  contents_group_id varchar(12) NOT NULL REFERENCES contents_groups(contents_group_id),
   type content_type NOT NULL,
   platform text NOT NULL DEFAULT '',
   status content_status NOT NULL DEFAULT 'draft',
@@ -669,7 +590,6 @@ CREATE TABLE contents (
   scheduled_for timestamptz,
   sort_order integer NOT NULL DEFAULT 0,
   tags text[] NOT NULL DEFAULT '{}'::text[],
-  asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
   content_data jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -682,14 +602,50 @@ CREATE INDEX contents_share_state_idx ON contents(share_state);
 CREATE INDEX contents_scheduled_for_idx ON contents(scheduled_for);
 CREATE INDEX contents_type_status_scheduled_idx ON contents(type, status, scheduled_for);
 CREATE INDEX contents_tags_idx ON contents USING gin(tags);
-CREATE INDEX contents_asset_ids_idx ON contents USING gin(asset_ids);
 CREATE INDEX contents_content_data_idx ON contents USING gin(content_data);
+
+CREATE TABLE asset_links (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  asset_link_id varchar(12) NOT NULL UNIQUE CHECK (asset_link_id ~ '^[0-9A-Za-z]{12}$'),
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  asset_id varchar(12) NOT NULL REFERENCES assets(asset_id),
+  project_id varchar(12) REFERENCES projects(project_id),
+  content_id varchar(12) REFERENCES contents(content_id),
+  context_profile_id varchar(12) REFERENCES context_profiles(context_profile_id),
+  role text NOT NULL DEFAULT 'attached' CHECK (role <> ''),
+  sort_order integer NOT NULL DEFAULT 0,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (jsonb_typeof(metadata) = 'object'),
+  CHECK (
+    (CASE WHEN project_id IS NULL THEN 0 ELSE 1 END) +
+    (CASE WHEN content_id IS NULL THEN 0 ELSE 1 END) +
+    (CASE WHEN context_profile_id IS NULL THEN 0 ELSE 1 END) = 1
+  )
+);
+
+CREATE INDEX asset_links_site_asset_idx ON asset_links(site_id, asset_id);
+CREATE INDEX asset_links_asset_idx ON asset_links(asset_id);
+CREATE INDEX asset_links_project_sort_idx ON asset_links(project_id, sort_order)
+  WHERE project_id IS NOT NULL;
+CREATE INDEX asset_links_content_sort_idx ON asset_links(content_id, sort_order)
+  WHERE content_id IS NOT NULL;
+CREATE INDEX asset_links_context_profile_sort_idx ON asset_links(context_profile_id, sort_order)
+  WHERE context_profile_id IS NOT NULL;
+CREATE UNIQUE INDEX asset_links_project_asset_role_idx ON asset_links(project_id, asset_id, role)
+  WHERE project_id IS NOT NULL;
+CREATE UNIQUE INDEX asset_links_content_asset_role_idx ON asset_links(content_id, asset_id, role)
+  WHERE content_id IS NOT NULL;
+CREATE UNIQUE INDEX asset_links_context_profile_asset_role_idx ON asset_links(context_profile_id, asset_id, role)
+  WHERE context_profile_id IS NOT NULL;
 
 CREATE TABLE comments (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   comment_id varchar(12) NOT NULL UNIQUE CHECK (comment_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
-  project_id varchar(12) REFERENCES projects(project_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
+  project_id varchar(12) REFERENCES projects(project_id),
   target_type text NOT NULL CHECK (target_type <> ''),
   target_id varchar(12) NOT NULL CHECK (target_id ~ '^[0-9A-Za-z]{12}$'),
   user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
@@ -760,7 +716,7 @@ CREATE INDEX actions_target_idx ON actions(target_type, target_id);
 CREATE TABLE channels (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   channel_id varchar(12) NOT NULL UNIQUE CHECK (channel_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   service text NOT NULL CHECK (service <> ''),
   provider text NOT NULL CHECK (provider <> ''),
   account_name text NOT NULL CHECK (account_name <> ''),
@@ -787,7 +743,7 @@ CREATE INDEX channels_external_connection_idx ON channels(broker, service, exter
 CREATE TABLE chats (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   chat_id varchar(12) NOT NULL UNIQUE CHECK (chat_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   reviewer_id varchar(12) REFERENCES reviewers(reviewer_id) ON DELETE SET NULL,
   title text NOT NULL DEFAULT '',
@@ -811,7 +767,7 @@ CREATE INDEX chats_updated_at_idx ON chats(updated_at DESC);
 CREATE TABLE chats_messages (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   chats_message_id varchar(12) NOT NULL UNIQUE CHECK (chats_message_id ~ '^[0-9A-Za-z]{12}$'),
-  chat_id varchar(12) NOT NULL REFERENCES chats(chat_id) ON DELETE CASCADE,
+  chat_id varchar(12) NOT NULL REFERENCES chats(chat_id),
   role chat_role NOT NULL,
   content text NOT NULL DEFAULT '',
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -830,13 +786,53 @@ ALTER TABLE knowledge
   ADD CONSTRAINT knowledge_source_message_fk
     FOREIGN KEY (source_message_id) REFERENCES chats_messages(chats_message_id) ON DELETE SET NULL;
 
+CREATE TABLE projects_work_logs (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  projects_work_log_id varchar(12) NOT NULL UNIQUE CHECK (projects_work_log_id ~ '^[0-9A-Za-z]{12}$'),
+  project_id varchar(12) NOT NULL REFERENCES projects(project_id),
+  actor_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  type project_work_log_type NOT NULL,
+  state project_work_log_state NOT NULL DEFAULT 'logged',
+  context_profile_id varchar(12) REFERENCES context_profiles(context_profile_id) ON DELETE SET NULL,
+  knowledge_id varchar(12) REFERENCES knowledge(knowledge_id) ON DELETE SET NULL,
+  chat_id varchar(12) REFERENCES chats(chat_id) ON DELETE SET NULL,
+  message_id varchar(12) REFERENCES chats_messages(chats_message_id) ON DELETE SET NULL,
+  request text NOT NULL DEFAULT '',
+  response text NOT NULL DEFAULT '',
+  summary text NOT NULL DEFAULT '',
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  CHECK (jsonb_typeof(metadata) = 'object'),
+  CHECK (type = 'context' OR context_profile_id IS NULL),
+  CHECK (type = 'context' OR knowledge_id IS NULL),
+  CHECK (type = 'context' OR state = 'logged')
+);
+
+CREATE INDEX projects_work_logs_project_type_created_at_idx
+  ON projects_work_logs(project_id, type, created_at DESC);
+CREATE INDEX projects_work_logs_project_state_idx
+  ON projects_work_logs(project_id, state, created_at DESC);
+CREATE INDEX projects_work_logs_actor_created_at_idx
+  ON projects_work_logs(actor_user_id, created_at DESC)
+  WHERE actor_user_id IS NOT NULL;
+CREATE INDEX projects_work_logs_context_profile_idx
+  ON projects_work_logs(context_profile_id)
+  WHERE context_profile_id IS NOT NULL;
+CREATE INDEX projects_work_logs_knowledge_idx
+  ON projects_work_logs(knowledge_id)
+  WHERE knowledge_id IS NOT NULL;
+CREATE INDEX projects_work_logs_chat_idx
+  ON projects_work_logs(chat_id)
+  WHERE chat_id IS NOT NULL;
+
 CREATE TABLE knowledge_profiles (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   knowledge_profile_id varchar(12) NOT NULL UNIQUE CHECK (knowledge_profile_id ~ '^[0-9A-Za-z]{12}$'),
-  knowledge_id varchar(12) NOT NULL REFERENCES knowledge(knowledge_id) ON DELETE CASCADE,
+  knowledge_id varchar(12) NOT NULL REFERENCES knowledge(knowledge_id),
   project_id varchar(12) REFERENCES projects(project_id) ON DELETE SET NULL,
-  profile_type text NOT NULL CHECK (profile_type IN ('audience', 'product', 'service', 'study', 'research', 'industry')),
-  profile_id varchar(12) NOT NULL CHECK (profile_id ~ '^[0-9A-Za-z]{12}$'),
+  context_profile_id varchar(12) NOT NULL REFERENCES context_profiles(context_profile_id),
   created_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   chat_id varchar(12) REFERENCES chats(chat_id) ON DELETE SET NULL,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -848,58 +844,33 @@ CREATE TABLE knowledge_profiles (
 CREATE INDEX knowledge_profiles_knowledge_idx ON knowledge_profiles(knowledge_id);
 CREATE INDEX knowledge_profiles_project_idx ON knowledge_profiles(project_id)
   WHERE project_id IS NOT NULL;
-CREATE INDEX knowledge_profiles_profile_idx ON knowledge_profiles(profile_type, profile_id);
+CREATE INDEX knowledge_profiles_context_profile_idx ON knowledge_profiles(context_profile_id);
 CREATE INDEX knowledge_profiles_chat_idx ON knowledge_profiles(chat_id)
   WHERE chat_id IS NOT NULL;
-
-CREATE TABLE projects_context_selections (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  projects_context_selection_id varchar(12) NOT NULL UNIQUE CHECK (projects_context_selection_id ~ '^[0-9A-Za-z]{12}$'),
-  project_id varchar(12) NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  selected_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  chat_id varchar(12) REFERENCES chats(chat_id) ON DELETE SET NULL,
-  message_id varchar(12) REFERENCES chats_messages(chats_message_id) ON DELETE SET NULL,
-  profile_type text NOT NULL CHECK (profile_type IN ('audience', 'product', 'service', 'study', 'research', 'industry')),
-  profile_id varchar(12) NOT NULL CHECK (profile_id ~ '^[0-9A-Za-z]{12}$'),
-  knowledge_id varchar(12) REFERENCES knowledge(knowledge_id) ON DELETE SET NULL,
-  state project_context_selection_state NOT NULL DEFAULT 'pending_user_input',
-  attachment_metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  user_instruction text NOT NULL DEFAULT '',
-  overlay_change_summary text NOT NULL DEFAULT '',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz,
-  CHECK (jsonb_typeof(attachment_metadata) = 'object')
-);
-
-CREATE INDEX projects_context_selections_project_state_idx
-  ON projects_context_selections(project_id, state, created_at DESC);
-CREATE INDEX projects_context_selections_chat_idx ON projects_context_selections(chat_id)
-  WHERE chat_id IS NOT NULL;
-CREATE INDEX projects_context_selections_profile_idx
-  ON projects_context_selections(profile_type, profile_id);
-CREATE INDEX projects_context_selections_knowledge_idx ON projects_context_selections(knowledge_id)
-  WHERE knowledge_id IS NOT NULL;
+CREATE UNIQUE INDEX knowledge_profiles_global_unique_idx
+  ON knowledge_profiles(knowledge_id, context_profile_id)
+  WHERE project_id IS NULL;
+CREATE UNIQUE INDEX knowledge_profiles_project_unique_idx
+  ON knowledge_profiles(knowledge_id, context_profile_id, project_id)
+  WHERE project_id IS NOT NULL;
 
 CREATE TABLE brands (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   brand_id varchar(12) NOT NULL UNIQUE CHECK (brand_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   name text NOT NULL DEFAULT 'Site and Brand',
   logo_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
   logo_crop jsonb NOT NULL DEFAULT '{}'::jsonb,
   colors jsonb NOT NULL DEFAULT '[]'::jsonb,
   typography jsonb NOT NULL DEFAULT '{}'::jsonb,
-  files jsonb NOT NULL DEFAULT '[]'::jsonb,
-  notes jsonb NOT NULL DEFAULT '{}'::jsonb,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (site_id),
   CHECK (jsonb_typeof(colors) = 'array'),
   CHECK (jsonb_typeof(logo_crop) = 'object'),
   CHECK (jsonb_typeof(typography) = 'object'),
-  CHECK (jsonb_typeof(files) = 'array'),
-  CHECK (jsonb_typeof(notes) = 'object')
+  CHECK (jsonb_typeof(metadata) = 'object')
 );
 
 CREATE INDEX brands_logo_asset_idx ON brands(logo_asset_id)
@@ -908,7 +879,7 @@ CREATE INDEX brands_logo_asset_idx ON brands(logo_asset_id)
 CREATE TABLE image_edit_templates (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   image_edit_template_id varchar(12) NOT NULL UNIQUE CHECK (image_edit_template_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) REFERENCES sites(site_id),
   title text NOT NULL CHECK (title <> ''),
   description text NOT NULL DEFAULT '',
   canvas_width integer NOT NULL CHECK (canvas_width > 0),
@@ -934,19 +905,16 @@ CREATE INDEX image_edit_templates_archived_at_idx
 CREATE TABLE generations (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   generation_id varchar(12) NOT NULL UNIQUE CHECK (generation_id ~ '^[0-9A-Za-z]{12}$'),
-  site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
+  site_id varchar(12) NOT NULL REFERENCES sites(site_id),
   requested_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  kind generation_kind NOT NULL DEFAULT 'social_media_asset',
+  kind generation_kind NOT NULL DEFAULT 'generate_image',
   prompt text NOT NULL DEFAULT '',
-  format text NOT NULL DEFAULT '',
-  style text NOT NULL DEFAULT '',
   credit_cost integer NOT NULL DEFAULT 0 CHECK (credit_cost >= 0),
   source_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
+  source_asset_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
   frame_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
   logo_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
   image_edit_template_id varchar(12) REFERENCES image_edit_templates(image_edit_template_id) ON DELETE SET NULL,
-  canvas_width integer CHECK (canvas_width IS NULL OR canvas_width > 0),
-  canvas_height integer CHECK (canvas_height IS NULL OR canvas_height > 0),
   input jsonb NOT NULL DEFAULT '{}'::jsonb,
   status ai_job_status NOT NULL DEFAULT 'queued',
   result_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
@@ -965,6 +933,8 @@ CREATE INDEX generations_site_status_idx
 CREATE INDEX generations_source_asset_idx
   ON generations(source_asset_id)
   WHERE source_asset_id IS NOT NULL;
+CREATE INDEX generations_source_asset_ids_idx
+  ON generations USING gin(source_asset_ids);
 CREATE INDEX generations_frame_asset_idx
   ON generations(frame_asset_id)
   WHERE frame_asset_id IS NOT NULL;

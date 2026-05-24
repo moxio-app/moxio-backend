@@ -23,7 +23,16 @@ export type ContextProfileType =
   | "case_study";
 
 export type ContentItemType = "social" | "email" | "web";
-export type ContentStatus = "draft" | "pending" | "scheduled" | "approved" | "rejected" | "live";
+export type ContentStatus =
+  | "draft"
+  | "need_revision"
+  | "pending"
+  | "scheduled"
+  | "approved"
+  | "rejected"
+  | "live"
+  | "published"
+  | "failed";
 export type ShareState = "private" | "site" | "public";
 export type RiskLevel = "low" | "medium" | "high";
 export type ActionSource = "ui" | "chat";
@@ -57,7 +66,7 @@ export interface Site {
 
 export interface ProjectDocument {
   id: string;
-  type: "overlay" | "voice" | "designs" | "context" | "sources" | "deliverables";
+  type: "overview" | "voice" | "designs" | "context" | "sources" | "deliverables";
   title: string;
   body: string;
   state: DocumentState;
@@ -72,9 +81,9 @@ export interface ProjectDocument {
   rejectionReason?: string;
 }
 
-export interface ProjectScopeLog {
+export interface ProjectWorkLog {
   id: string;
-  type: "sources" | "deliverables";
+  type: "sources" | "deliverables" | "context";
   requestedBy: string;
   request: string;
   response: string;
@@ -101,7 +110,7 @@ export interface Project {
   modifiedAt: string;
   summary: string;
   documents: ProjectDocument[];
-  scopeLogs: ProjectScopeLog[];
+  workLogs: ProjectWorkLog[];
   deliverables: Deliverables;
   contextProfileIds: string[];
   mediaIds: string[];
@@ -141,6 +150,7 @@ export interface KnowledgeBaseFile {
   siteId: string;
   fileName: string;
   fileType: string;
+  description?: string;
   indexingStatus: "queued" | "indexed" | "failed";
   associatedContextProfileId?: string;
   associatedProjectId?: string;
@@ -154,7 +164,7 @@ export interface MediaAsset {
   siteId: string;
   title: string;
   fileType: string;
-  mediaType: "image" | "video" | "document";
+  mediaType: "image" | "video";
   thumbnail: string;
   tags: string[];
   folder: string;
