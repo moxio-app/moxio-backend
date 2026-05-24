@@ -70,6 +70,7 @@ CREATE TYPE confirmation_state AS ENUM ('not_required', 'confirmed');
 CREATE TYPE action_result AS ENUM ('success', 'failure');
 CREATE TYPE chat_role AS ENUM ('system', 'user', 'assistant', 'tool');
 CREATE TYPE ai_job_status AS ENUM ('queued', 'running', 'completed', 'failed');
+CREATE TYPE generation_kind AS ENUM ('social_media_asset', 'infographic', 'image_edit');
 CREATE TYPE billing_interval AS ENUM ('monthly', 'annual');
 CREATE TYPE permission_scope AS ENUM ('team', 'site', 'project');
 CREATE TYPE permission_role AS ENUM (
@@ -904,22 +905,74 @@ CREATE TABLE brands (
 CREATE INDEX brands_logo_asset_idx ON brands(logo_asset_id)
   WHERE logo_asset_id IS NOT NULL;
 
+CREATE TABLE image_edit_templates (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  image_edit_template_id varchar(12) NOT NULL UNIQUE CHECK (image_edit_template_id ~ '^[0-9A-Za-z]{12}$'),
+  site_id varchar(12) REFERENCES sites(site_id) ON DELETE CASCADE,
+  title text NOT NULL CHECK (title <> ''),
+  description text NOT NULL DEFAULT '',
+  canvas_width integer NOT NULL CHECK (canvas_width > 0),
+  canvas_height integer NOT NULL CHECK (canvas_height > 0),
+  layers jsonb NOT NULL DEFAULT '{}'::jsonb,
+  is_system boolean NOT NULL DEFAULT false,
+  created_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  archived_at timestamptz,
+  CHECK (jsonb_typeof(layers) = 'object')
+);
+
+CREATE INDEX image_edit_templates_site_updated_at_idx
+  ON image_edit_templates(site_id, updated_at DESC)
+  WHERE site_id IS NOT NULL;
+CREATE INDEX image_edit_templates_system_idx
+  ON image_edit_templates(is_system, title)
+  WHERE archived_at IS NULL;
+CREATE INDEX image_edit_templates_archived_at_idx
+  ON image_edit_templates(archived_at);
+
 CREATE TABLE generations (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   generation_id varchar(12) NOT NULL UNIQUE CHECK (generation_id ~ '^[0-9A-Za-z]{12}$'),
   site_id varchar(12) NOT NULL REFERENCES sites(site_id) ON DELETE CASCADE,
   requested_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  prompt text NOT NULL CHECK (prompt <> ''),
+  kind generation_kind NOT NULL DEFAULT 'social_media_asset',
+  prompt text NOT NULL DEFAULT '',
   format text NOT NULL DEFAULT '',
   style text NOT NULL DEFAULT '',
+  credit_cost integer NOT NULL DEFAULT 0 CHECK (credit_cost >= 0),
+  source_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
+  frame_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
+  logo_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
+  image_edit_template_id varchar(12) REFERENCES image_edit_templates(image_edit_template_id) ON DELETE SET NULL,
+  canvas_width integer CHECK (canvas_width IS NULL OR canvas_width > 0),
+  canvas_height integer CHECK (canvas_height IS NULL OR canvas_height > 0),
+  input jsonb NOT NULL DEFAULT '{}'::jsonb,
   status ai_job_status NOT NULL DEFAULT 'queued',
   result_asset_id varchar(12) REFERENCES assets(asset_id) ON DELETE SET NULL,
   error_message text,
   created_at timestamptz NOT NULL DEFAULT now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  CHECK (jsonb_typeof(input) = 'object')
 );
 
 CREATE INDEX generations_site_created_at_idx
   ON generations(site_id, created_at DESC);
+CREATE INDEX generations_site_kind_created_at_idx
+  ON generations(site_id, kind, created_at DESC);
+CREATE INDEX generations_site_status_idx
+  ON generations(site_id, status);
+CREATE INDEX generations_source_asset_idx
+  ON generations(source_asset_id)
+  WHERE source_asset_id IS NOT NULL;
+CREATE INDEX generations_frame_asset_idx
+  ON generations(frame_asset_id)
+  WHERE frame_asset_id IS NOT NULL;
+CREATE INDEX generations_logo_asset_idx
+  ON generations(logo_asset_id)
+  WHERE logo_asset_id IS NOT NULL;
+CREATE INDEX generations_template_idx
+  ON generations(image_edit_template_id)
+  WHERE image_edit_template_id IS NOT NULL;
 
 COMMIT;
