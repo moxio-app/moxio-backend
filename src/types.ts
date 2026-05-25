@@ -1,12 +1,3 @@
-export type ProjectState =
-  | "empty"
-  | "in_progress"
-  | "awaiting_approval"
-  | "approved"
-  | "completed"
-  | "rejected"
-  | "archived";
-
 export type DocumentState =
   | "empty"
   | "in_progress"
@@ -104,7 +95,6 @@ export interface Project {
   id: string;
   siteId: string;
   name: string;
-  state: ProjectState;
   ownerId: string;
   reviewerId?: string;
   modifiedAt: string;

@@ -75,7 +75,7 @@ export const handleChatTurn = (input: {
       intent: "existing_project_qa",
       loadedToolBundles: ["base", "project.read"],
       reply: project
-        ? `${project.name} is ${project.state.replaceAll("_", " ")}. It has ${project.documents.length} scope documents, ${project.mediaIds.length} media assets, and deliverables for ${project.deliverables.facebookCount} Facebook, ${project.deliverables.webCount} web, and ${project.deliverables.emailCount} email items.`
+        ? `${project.name} has ${project.documents.length} scope documents, ${project.mediaIds.length} media assets, and deliverables for ${project.deliverables.facebookCount} Facebook, ${project.deliverables.webCount} web, and ${project.deliverables.emailCount} email items.`
         : "I loaded Project read tools, but I need a selected Project to answer precisely.",
       highlights: project,
     };

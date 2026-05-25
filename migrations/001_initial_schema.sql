@@ -31,15 +31,6 @@
 
 BEGIN;
 
-CREATE TYPE project_state AS ENUM (
-  'empty',
-  'in_progress',
-  'awaiting_approval',
-  'approved',
-  'completed',
-  'rejected',
-  'archived'
-);
 CREATE TYPE project_doc_type AS ENUM (
   'overview',
   'voice',
@@ -285,7 +276,6 @@ CREATE TABLE projects (
   project_admin_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   reviewer_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   name text NOT NULL CHECK (name <> ''),
-  state project_state NOT NULL DEFAULT 'empty',
   share_state share_state NOT NULL DEFAULT 'private',
   summary text NOT NULL DEFAULT '',
   facebook_count integer NOT NULL DEFAULT 0 CHECK (facebook_count >= 0),
@@ -296,11 +286,6 @@ CREATE TABLE projects (
   destination_accounts text[] NOT NULL DEFAULT '{}'::text[],
   deliverable_notes text NOT NULL DEFAULT '',
   context_profile_ids varchar(12)[] NOT NULL DEFAULT '{}'::varchar(12)[],
-  approved_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  approved_at timestamptz,
-  rejected_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
-  rejected_at timestamptz,
-  rejection_reason text NOT NULL DEFAULT '',
   archived_by_user_id varchar(12) REFERENCES users(user_id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -310,17 +295,12 @@ CREATE TABLE projects (
 CREATE INDEX projects_owner_user_id_idx ON projects(owner_user_id);
 CREATE INDEX projects_project_admin_user_id_idx ON projects(project_admin_user_id)
   WHERE project_admin_user_id IS NOT NULL;
-CREATE INDEX projects_site_state_idx ON projects(site_id, state);
 CREATE INDEX projects_site_share_state_idx ON projects(site_id, share_state);
 CREATE INDEX projects_site_updated_at_idx ON projects(site_id, updated_at DESC);
 CREATE INDEX projects_site_active_updated_at_idx ON projects(site_id, updated_at DESC)
   WHERE archived_at IS NULL;
 CREATE INDEX projects_site_name_idx ON projects(site_id, lower(name));
 CREATE INDEX projects_context_profile_ids_idx ON projects USING gin(context_profile_ids);
-CREATE INDEX projects_approved_by_user_id_idx ON projects(approved_by_user_id)
-  WHERE approved_by_user_id IS NOT NULL;
-CREATE INDEX projects_rejected_by_user_id_idx ON projects(rejected_by_user_id)
-  WHERE rejected_by_user_id IS NOT NULL;
 CREATE INDEX projects_archived_by_user_id_idx ON projects(archived_by_user_id)
   WHERE archived_by_user_id IS NOT NULL;
 

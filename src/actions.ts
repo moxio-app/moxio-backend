@@ -191,10 +191,6 @@ const projectActionSchema = z.object({
   projectId: z.string().min(1),
 });
 
-const rejectProjectSchema = projectActionSchema.extend({
-  reason: z.string().trim().min(3).default("Rejected from the Projects list."),
-});
-
 const shareProjectSchema = projectActionSchema.extend({
   visibility: z.enum(["private", "public"]),
 });
@@ -313,7 +309,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
         id: createId("project"),
         siteId: store.site.id,
         name: parsed.name,
-        state: "in_progress",
         ownerId: store.currentUser.id,
         reviewerId: "user-2",
         modifiedAt: now(),
@@ -348,62 +343,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       });
     },
   },
-  "project.approve": {
-    risk: "high",
-    targetType: "project",
-    getTargetId: (payload) => projectActionSchema.parse(payload).projectId,
-    preview: (payload) => {
-      const project = findProject(projectActionSchema.parse(payload).projectId);
-      return `Approve Project "${project.name}" and make it ready for content generation.`;
-    },
-    execute: (request) => {
-      const parsed = projectActionSchema.parse(request.payload);
-      const project = findProject(parsed.projectId);
-      const previous = project.state;
-      project.state = "approved";
-      touchProject(project);
-
-      return success("project.approve", "high", "Project approved.", project, {
-        targetType: "project",
-        targetId: project.id,
-        previousValueSummary: previous,
-        newValueSummary: project.state,
-        source: request.source,
-      });
-    },
-  },
-  "project.reject": {
-    risk: "high",
-    targetType: "project",
-    getTargetId: (payload) => rejectProjectSchema.parse(payload).projectId,
-    preview: (payload) => {
-      const parsed = rejectProjectSchema.parse(payload);
-      const project = findProject(parsed.projectId);
-      return `Reject Project "${project.name}" with reason: ${parsed.reason}`;
-    },
-    execute: (request) => {
-      const parsed = rejectProjectSchema.parse(request.payload);
-      const project = findProject(parsed.projectId);
-      const previous = project.state;
-      project.state = "rejected";
-      project.documents
-        .filter((document) => document.state === "awaiting_approval")
-        .forEach((document) => {
-          document.state = "rejected";
-          document.rejectionReason = parsed.reason;
-          document.updatedAt = now();
-        });
-      touchProject(project);
-
-      return success("project.reject", "high", "Project rejected.", project, {
-        targetType: "project",
-        targetId: project.id,
-        previousValueSummary: previous,
-        newValueSummary: `rejected: ${parsed.reason}`,
-        source: request.source,
-      });
-    },
-  },
   "project.delete": {
     risk: "high",
     targetType: "project",
@@ -415,7 +354,7 @@ const actionRegistry: Record<string, RegisteredAction> = {
     execute: (request) => {
       const parsed = projectActionSchema.parse(request.payload);
       const project = findProject(parsed.projectId);
-      const previous = `${project.name}: ${project.state}`;
+      const previous = project.name;
       const relatedGroupIds = store.contentGroups
         .filter((group) => group.projectId === project.id)
         .map((group) => group.id);
@@ -485,7 +424,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       target.updatedAt = now();
       delete target.approval;
       delete target.rejectionReason;
-      project.state = "awaiting_approval";
       touchProject(project);
 
       return success("project.update_scope_document", "medium", "Scope document updated.", project, {
@@ -522,13 +460,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       target.updatedAt = now();
       touchProject(project);
 
-      const allCoreApproved = project.documents
-        .filter((doc) => ["overview", "voice", "deliverables"].includes(doc.type))
-        .every((doc) => doc.state === "approved");
-      if (allCoreApproved && project.state !== "completed") {
-        project.state = "approved";
-      }
-
       return success("project.approve_document", "medium", "Document approved.", project, {
         targetType: "project_document",
         targetId: target.id,
@@ -555,7 +486,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       target.state = "rejected";
       target.rejectionReason = parsed.reason;
       target.updatedAt = now();
-      project.state = "rejected";
       touchProject(project);
 
       return success("project.reject_document", "medium", "Document rejected.", project, {
@@ -595,7 +525,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       doc.state = "awaiting_approval";
       doc.version += 1;
       doc.updatedAt = now();
-      project.state = "awaiting_approval";
       touchProject(project);
 
       return success("project.plan_deliverables", "medium", "Deliverables planned.", project, {
@@ -724,7 +653,6 @@ const actionRegistry: Record<string, RegisteredAction> = {
       store.contentItems.unshift(...createdItems);
       store.contentGroups.unshift(group);
       project.contentGroupId = group.id;
-      project.state = "completed";
       touchProject(project);
 
       return success("project.create_content_group", "medium", "Content group created.", { project, group, items: createdItems }, {
